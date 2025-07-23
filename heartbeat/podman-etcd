@@ -592,6 +592,7 @@ peer-transport-security:
   key-file: $ETCD_PEER_KEY
   client-cert-auth: true
   trusted-ca-file: $SERVER_CACERT
+<<<<<<< HEAD
 advertise-client-urls: "$NODEIPURL:2379"
 listen-metrics-urls: "$(ip_url ${LISTEN_METRICS_URLS}):9978"
 metrics: extensive
@@ -1360,6 +1361,7 @@ ensure_pod_manifest_exists()
 	return "$OCF_SUCCESS"
 }
 
+<<<<<<< HEAD
 filter_pod_manifest() {
 	# Remove pod-version related fields from POD manifest
 	local pod_manifest="$1"
