@@ -555,12 +555,35 @@ prepare_env() {
 	LISTEN_METRICS_URLS="0.0.0.0"
 }
 
+compute_bump_revision() {
+	# see https://github.com/openshift/cluster-etcd-operator/blob/215998939f5223da916622c71fd07d17656faf6b/bindata/etcd/quorum-restore-pod.yaml#L26-L34
+	# set a default value: 1bn would be an etcd running at 1000 writes/s for about eleven days.
+	BUMP_REV=1000000000
+	if [ ! -f "${REV_JSON}" ]; then
+		ocf_log err "could not compute bump revision: ${REV_JSON} not found. Defaulting to 1bn revision bump"
+		return
+	fi
+
+	# this will bump by the amount of 20% of the last known live revision.
+	if ! COMPUTED_BUMP=$(jq -r "(.maxRaftIndex*0.2|floor)" "${REV_JSON}"); then
+		ocf_log err "could not compute maxRaftIndex for bump revision, jq error code: $?. Defaulting to 1bn revision bump"
+		return
+	fi
+
+	if [ -z "${COMPUTED_BUMP}" ] || [ "${COMPUTED_BUMP}" -le 0 ]; then
+		ocf_log err "computed bump revision (${COMPUTED_BUMP}) is invalid. Defaulting to 1bn revision bump"
+		return
+	fi
+	BUMP_REV="${COMPUTED_BUMP}"
+	ocf_log info "bumping revisions by ${BUMP_REV}"
+}
 
 generate_etcd_configuration() {
 	if is_force_new_cluster; then
+		compute_bump_revision
 		# The embedded newline is required for correct YAML formatting.
 		FORCE_NEW_CLUSTER_CONFIG="force-new-cluster: true
-force-new-cluster-bump-amount: 1000000000"
+force-new-cluster-bump-amount: $BUMP_REV"
 	else
 		FORCE_NEW_CLUSTER_CONFIG="force-new-cluster: false"
 	fi
@@ -592,7 +615,6 @@ peer-transport-security:
   key-file: $ETCD_PEER_KEY
   client-cert-auth: true
   trusted-ca-file: $SERVER_CACERT
-<<<<<<< HEAD
 advertise-client-urls: "$NODEIPURL:2379"
 listen-metrics-urls: "$(ip_url ${LISTEN_METRICS_URLS}):9978"
 metrics: extensive
@@ -644,7 +666,7 @@ attribute_node_cluster_id()
 {
 	local action="$1"
 	local value
-	if ! value=$(jq -r ".clusterId" /var/lib/etcd/revision.json); then
+	if ! value=$(jq -r ".clusterId" "$REV_JSON"); then
 		rc=$?
 		ocf_log err "could not get cluster_id, error code: $rc"
 		return "$rc"
@@ -682,7 +704,7 @@ attribute_node_revision()
 	local value
 	local attribute="revision"
 
-	if ! value=$(jq -r ".maxRaftIndex" /var/lib/etcd/revision.json); then
+	if ! value=$(jq -r ".maxRaftIndex" "$REV_JSON"); then
 		rc=$?
 		ocf_log err "could not get $attribute, error code: $rc"
 		return "$rc"
@@ -1361,7 +1383,6 @@ ensure_pod_manifest_exists()
 	return "$OCF_SUCCESS"
 }
 
-<<<<<<< HEAD
 filter_pod_manifest() {
 	# Remove pod-version related fields from POD manifest
 	local pod_manifest="$1"
@@ -1389,7 +1410,7 @@ can_reuse_container() {
 
 
 	# If the container does not exist it cannot be reused
-	if ! container_exists; then 
+	if ! container_exists; then
 		OCF_RESKEY_reuse=0
 		return "$OCF_SUCCESS"
 	fi
@@ -1924,6 +1945,7 @@ CONTAINER=$OCF_RESKEY_name
 POD_MANIFEST_COPY="${OCF_RESKEY_config_location}/pod.yaml"
 ETCD_CONFIGURATION_FILE="${OCF_RESKEY_config_location}/config.yaml"
 ETCD_BACKUP_FILE="${OCF_RESKEY_backup_location}/config-previous.tar.gz"
+REV_JSON="/var/lib/etcd/revision.json"
 
 # Note: we currently monitor podman containers by with the "podman exec"
 # command, so make sure that invocation is always valid by enforcing the
